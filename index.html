@@ -1185,7 +1185,13 @@
             loadComments(activeAd.id);
 
             const modal = document.getElementById('adModal');
-            if (modal) modal.classList.remove('hidden');
+            if (modal) {
+                // Si aún no hemos agregado la marca al historial, la agregamos
+                if (!window.location.hash.includes('detail')) {
+                    history.pushState({ modalOpen: true, adId: activeAd.id }, '', '#detail-' + activeAd.id);
+                }
+                modal.classList.remove('hidden');
+            }
         };
 
         // Render Comments List
@@ -1289,13 +1295,25 @@
                 });
             }
 
-            // Modal Controls
-            const closeModalBtn = document.getElementById('closeModalBtn');
-            const adModal = document.getElementById('adModal');
+            // Modal Controls con limpieza de Historial
+            function closeAdModalUI() {
+                if (adModal && !adModal.classList.contains('hidden')) {
+                    adModal.classList.add('hidden');
+                    if (activeUnsubscribe) {
+                        activeUnsubscribe();
+                        activeUnsubscribe = null;
+                    }
+                    // Si el modal se cerró tocando la 'X', limpiamos el #hash de la URL
+                    if (window.location.hash.includes('detail')) {
+                        history.back();
+                    }
+                }
+            }
+
             if (closeModalBtn && adModal) {
-                closeModalBtn.addEventListener('click', () => adModal.classList.add('hidden'));
+                closeModalBtn.addEventListener('click', closeAdModalUI);
                 adModal.addEventListener('click', (e) => {
-                    if (e.target === adModal) adModal.classList.add('hidden');
+                    if (e.target === adModal) closeAdModalUI();
                 });
             }
 
@@ -1424,7 +1442,34 @@
                     renderAdsList(adsData);
                 });
             }
+			
+			
+			
+			// Escuchar el botón físico/gesto de "Atrás" del teléfono
+            window.addEventListener('popstate', function() {
+                const lightboxModal = document.getElementById('lightboxModal');
+
+                // 1. Si la foto en pantalla completa (lightbox) está abierta, la cierra primero
+                if (lightboxModal && !lightboxModal.classList.contains('hidden')) {
+                    window.closeLightbox();
+                    return;
+                }
+
+                // 2. Si la tarjeta de la chica está abierta, la cierra sin salir de la web
+                if (adModal && !adModal.classList.contains('hidden')) {
+                    adModal.classList.add('hidden');
+                    if (activeUnsubscribe) {
+                        activeUnsubscribe();
+                        activeUnsubscribe = null;
+                    }
+                }
+            });
+			
+			
         });
+		
+		
+		
     </script>
 </body>
 </html>
