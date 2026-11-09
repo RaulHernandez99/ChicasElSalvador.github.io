@@ -1697,17 +1697,29 @@
         }
 
         window.openLightbox = function() {
-            const lightboxModal = document.getElementById('lightboxModal');
-            const lightboxImg = document.getElementById('lightboxImg');
-            if (!lightboxModal || !lightboxImg || currentImageGallery.length === 0) return;
-            lightboxImg.src = currentImageGallery[currentSlideIndex];
-            lightboxModal.classList.remove('hidden');
-        };
+			const lightboxModal = document.getElementById('lightboxModal');
+			const lightboxImg = document.getElementById('lightboxImg');
+			if (!lightboxModal || !lightboxImg || currentImageGallery.length === 0) return;
+			lightboxImg.src = currentImageGallery[currentSlideIndex];
+
+			// Agrega el 2do nivel de historial (#photo) para la foto grande
+			if (!window.location.hash.includes('photo')) {
+				history.pushState({ lightboxOpen: true }, '', '#photo-' + (activeAd ? activeAd.id : 'zoom'));
+			}
+
+			lightboxModal.classList.remove('hidden');
+		};
 
         window.closeLightbox = function() {
-            const lightboxModal = document.getElementById('lightboxModal');
-            if (lightboxModal) lightboxModal.classList.add('hidden');
-        };
+			const lightboxModal = document.getElementById('lightboxModal');
+			if (lightboxModal && !lightboxModal.classList.contains('hidden')) {
+				lightboxModal.classList.add('hidden');
+				// Si el usuario cerró con la 'X' o clic afuera, remueve la marca #photo
+				if (window.location.hash.includes('photo')) {
+					history.back();
+				}
+			}
+		};
 
         function setSlide(index) {
             currentSlideIndex = index;
@@ -2022,24 +2034,24 @@
 			
 			
 			// Escuchar el botón físico/gesto de "Atrás" del teléfono
-            window.addEventListener('popstate', function() {
-                const lightboxModal = document.getElementById('lightboxModal');
+            window.addEventListener('popstate', function(event) {
+				const lightboxModal = document.getElementById('lightboxModal');
 
-                // 1. Si la foto en pantalla completa (lightbox) está abierta, la cierra primero
-                if (lightboxModal && !lightboxModal.classList.contains('hidden')) {
-                    window.closeLightbox();
-                    return;
-                }
+				// 1er Retroceso: Si la foto grande (lightbox) está abierta, la oculta y se queda dentro de la tarjeta
+				if (lightboxModal && !lightboxModal.classList.contains('hidden')) {
+					lightboxModal.classList.add('hidden');
+					return; // ¡Importante! Detiene aquí el código para no cerrar la tarjeta
+				}
 
-                // 2. Si la tarjeta de la chica está abierta, la cierra sin salir de la web
-                if (adModal && !adModal.classList.contains('hidden')) {
-                    adModal.classList.add('hidden');
-                    if (activeUnsubscribe) {
-                        activeUnsubscribe();
-                        activeUnsubscribe = null;
-                    }
-                }
-            });
+				// 2do Retroceso: Si la tarjeta de la chica está abierta, la cierra y vuelve al catálogo general
+				if (adModal && !adModal.classList.contains('hidden')) {
+					adModal.classList.add('hidden');
+					if (activeUnsubscribe) {
+						activeUnsubscribe();
+						activeUnsubscribe = null;
+					}
+				}
+			});
 			
 			
         });
