@@ -2792,8 +2792,56 @@
 
 
 
+        // Mezcla aleatoria (Fisher-Yates) persistente durante la sesión actual
+        function getSessionRandomizedAds(ads) {
+            if (!Array.isArray(ads) || ads.length === 0) return [];
+            const storageKey = 'chicas_es_session_order_v1';
+
+            try {
+                const savedOrder = window.sessionStorage ? sessionStorage.getItem(storageKey) : null;
+
+                // Si el usuario ya entró en esta sesión, respetamos su orden actual
+                if (savedOrder) {
+                    const orderIds = JSON.parse(savedOrder);
+                    const adMap = new Map(ads.map(ad => [ad.id, ad]));
+                    const orderedAds = [];
+
+                    orderIds.forEach(id => {
+                        if (adMap.has(id)) {
+                            orderedAds.push(adMap.get(id));
+                            adMap.delete(id);
+                        }
+                    });
+
+                    // Si agregaste anuncios nuevos después de iniciada la sesión, los añade al final
+                    adMap.forEach(ad => orderedAds.push(ad));
+                    if (orderedAds.length > 0) return orderedAds;
+                }
+            } catch (e) {
+                console.warn('Leyendo orden de sesión:', e);
+            }
+
+            // Primera visita en esta sesión: barajar aleatoriamente (Fisher-Yates)
+            const shuffled = [...ads];
+            for (let i = shuffled.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+            }
+
+            // Guardar el orden de IDs en sessionStorage
+            try {
+                if (window.sessionStorage) {
+                    sessionStorage.setItem(storageKey, JSON.stringify(shuffled.map(a => a.id)));
+                }
+            } catch (e) {
+                console.warn('No se pudo guardar en sessionStorage:', e);
+            }
+
+            return shuffled;
+        }
+
         // Global State
-        let adsData = [...sampleAds];
+        let adsData = getSessionRandomizedAds(sampleAds);
         let activeAd = null;
         let selectedRating = 5;
         let currentImageGallery = [];
@@ -2921,29 +2969,27 @@
         }
 
         window.openLightbox = function() {
-			const lightboxModal = document.getElementById('lightboxModal');
-			const lightboxImg = document.getElementById('lightboxImg');
-			if (!lightboxModal || !lightboxImg || currentImageGallery.length === 0) return;
-			lightboxImg.src = currentImageGallery[currentSlideIndex];
+            const lightboxModal = document.getElementById('lightboxModal');
+            const lightboxImg = document.getElementById('lightboxImg');
+            if (!lightboxModal || !lightboxImg || currentImageGallery.length === 0) return;
+            lightboxImg.src = currentImageGallery[currentSlideIndex];
 
-			// Agrega el 2do nivel de historial (#photo) para la foto grande
-			if (!window.location.hash.includes('photo')) {
-				history.pushState({ lightboxOpen: true }, '', '#photo-' + (activeAd ? activeAd.id : 'zoom'));
-			}
+            if (!window.location.hash.includes('photo')) {
+                history.pushState({ lightboxOpen: true }, '', '#photo-' + (activeAd ? activeAd.id : 'zoom'));
+            }
 
-			lightboxModal.classList.remove('hidden');
-		};
+            lightboxModal.classList.remove('hidden');
+        };
 
         window.closeLightbox = function() {
-			const lightboxModal = document.getElementById('lightboxModal');
-			if (lightboxModal && !lightboxModal.classList.contains('hidden')) {
-				lightboxModal.classList.add('hidden');
-				// Si el usuario cerró con la 'X' o clic afuera, remueve la marca #photo
-				if (window.location.hash.includes('photo')) {
-					history.back();
-				}
-			}
-		};
+            const lightboxModal = document.getElementById('lightboxModal');
+            if (lightboxModal && !lightboxModal.classList.contains('hidden')) {
+                lightboxModal.classList.add('hidden');
+                if (window.location.hash.includes('photo')) {
+                    history.back();
+                }
+            }
+        };
 
         function setSlide(index) {
             currentSlideIndex = index;
@@ -2955,7 +3001,6 @@
             activeAd = adsData.find(a => a.id === adId);
             if (!activeAd) return;
 
-            // Track view in Google Analytics
             if (typeof gtag === 'function') {
                 gtag('event', 'view_item', {
                     item_id: activeAd.id,
@@ -2993,12 +3038,10 @@
             currentSlideIndex = 0;
             updateCarousel();
 
-            // Load & Listen Comments (Firebase Firestore + Local Fallback)
             loadComments(activeAd.id);
 
             const modal = document.getElementById('adModal');
             if (modal) {
-                // Si aún no hemos agregado la marca al historial, la agregamos
                 if (!window.location.hash.includes('detail')) {
                     history.pushState({ modalOpen: true, adId: activeAd.id }, '', '#detail-' + activeAd.id);
                 }
@@ -3045,7 +3088,6 @@
             const local = getLocalComments(adId);
             renderCommentsList(local);
 
-            // If Firebase loaded successfully
             if (window.db && window.firestoreTools) {
                 try {
                     const { collection, onSnapshot, query, orderBy } = window.firestoreTools;
@@ -3057,8 +3099,6 @@
                         snapshot.forEach(doc => {
                             firebaseComments.push(doc.data());
                         });
-
-                        console.log(`🔥 Conexión Firestore activa: ${firebaseComments.length} comentarios cargados en tiempo real.`);
 
                         if (firebaseComments.length > 0) {
                             renderCommentsList(firebaseComments);
@@ -3076,10 +3116,11 @@
         document.addEventListener('DOMContentLoaded', () => {
             renderAdsList(adsData);
 
-            // Filter logic
             const searchInput = document.getElementById('searchInput');
             const locationFilter = document.getElementById('locationFilter');
             const resetBtn = document.getElementById('resetFiltersBtn');
+            const adModal = document.getElementById('adModal');
+            const closeModalBtn = document.getElementById('closeModalBtn');
 
             function applyFilters() {
                 const query = (searchInput?.value || '').toLowerCase();
@@ -3107,7 +3148,6 @@
                 });
             }
 
-            // Modal Controls con limpieza de Historial
             function closeAdModalUI() {
                 if (adModal && !adModal.classList.contains('hidden')) {
                     adModal.classList.add('hidden');
@@ -3115,7 +3155,6 @@
                         activeUnsubscribe();
                         activeUnsubscribe = null;
                     }
-                    // Si el modal se cerró tocando la 'X', limpiamos el #hash de la URL
                     if (window.location.hash.includes('detail')) {
                         history.back();
                     }
@@ -3129,12 +3168,9 @@
                 });
             }
 
-            // Carousel Controls
             const prevBtn = document.getElementById('prevSlideBtn');
             const nextBtn = document.getElementById('nextSlideBtn');
             const mainImg = document.getElementById('carouselMainImg');
-
-            // Lightbox Elements
             const lightboxModal = document.getElementById('lightboxModal');
             const lightboxImg = document.getElementById('lightboxImg');
             const prevLightboxBtn = document.getElementById('prevLightboxBtn');
@@ -3162,7 +3198,6 @@
                 });
             }
 
-            // Keyboard navigation (Esc, Left arrow, Right arrow)
             document.addEventListener('keydown', (e) => {
                 if (lightboxModal && !lightboxModal.classList.contains('hidden')) {
                     if (e.key === 'Escape') window.closeLightbox();
@@ -3185,7 +3220,6 @@
                 });
             }
 
-            // Star Rating selector
             const starOptions = document.querySelectorAll('.star-option');
             starOptions.forEach(star => {
                 star.addEventListener('click', (e) => {
@@ -3202,7 +3236,6 @@
                 });
             });
 
-            // Submit comment handler
             const addCommentBtn = document.getElementById('addCommentBtn');
             if (addCommentBtn) {
                 addCommentBtn.addEventListener('click', async () => {
@@ -3214,10 +3247,7 @@
                     const author = authorInput?.value.trim() || 'Anónimo';
                     const text = textInput?.value.trim();
 
-                    if (!text) {
-                        alert('Por favor escribe tu opinión antes de enviar.');
-                        return;
-                    }
+                    if (!text) return;
 
                     const newComment = {
                         author,
@@ -3227,10 +3257,8 @@
                         timestamp: Date.now()
                     };
 
-                    // Save local backup immediately
                     saveLocalComment(activeAd.id, newComment);
 
-                    // Track comment in Google Analytics
                     if (typeof gtag === 'function') {
                         gtag('event', 'post_review', {
                             item_id: activeAd.id,
@@ -3238,7 +3266,6 @@
                         });
                     }
 
-                    // Push to Firestore if available
                     if (window.db && window.firestoreTools) {
                         try {
                             const { collection, addDoc } = window.firestoreTools;
@@ -3248,40 +3275,27 @@
                         }
                     }
 
-                    // Reset form
                     if (textInput) textInput.value = '';
                     loadComments(activeAd.id);
                     renderAdsList(adsData);
                 });
             }
-			
-			
-			
-			// Escuchar el botón físico/gesto de "Atrás" del teléfono
-            window.addEventListener('popstate', function(event) {
-				const lightboxModal = document.getElementById('lightboxModal');
 
-				// 1er Retroceso: Si la foto grande (lightbox) está abierta, la oculta y se queda dentro de la tarjeta
-				if (lightboxModal && !lightboxModal.classList.contains('hidden')) {
-					lightboxModal.classList.add('hidden');
-					return; // ¡Importante! Detiene aquí el código para no cerrar la tarjeta
-				}
+            window.addEventListener('popstate', function() {
+                if (lightboxModal && !lightboxModal.classList.contains('hidden')) {
+                    lightboxModal.classList.add('hidden');
+                    return;
+                }
 
-				// 2do Retroceso: Si la tarjeta de la chica está abierta, la cierra y vuelve al catálogo general
-				if (adModal && !adModal.classList.contains('hidden')) {
-					adModal.classList.add('hidden');
-					if (activeUnsubscribe) {
-						activeUnsubscribe();
-						activeUnsubscribe = null;
-					}
-				}
-			});
-			
-			
+                if (adModal && !adModal.classList.contains('hidden')) {
+                    adModal.classList.add('hidden');
+                    if (activeUnsubscribe) {
+                        activeUnsubscribe();
+                        activeUnsubscribe = null;
+                    }
+                }
+            });
         });
-		
-		
-		
     </script>
 </body>
 </html>
